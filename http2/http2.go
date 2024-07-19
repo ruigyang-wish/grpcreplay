@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"time"
+	"unsafe"
+
 	"github.com/vearne/grpcreplay/protocol"
 	slog "github.com/vearne/simplelog"
 	"golang.org/x/net/http2/hpack"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -177,31 +179,47 @@ type FrameBase struct {
 	Payload    []byte
 }
 
+func GetEndianness() binary.ByteOrder {
+	buf := [2]byte{}
+	*(*uint16)(unsafe.Pointer(&buf[0])) = uint16(0xABCD)
+
+	switch buf {
+	case [2]byte{0xCD, 0xAB}:
+		return binary.LittleEndian
+	case [2]byte{0xAB, 0xCD}:
+		return binary.BigEndian
+	default:
+		panic("Could not determine native endianness.")
+	}
+}
+
 func ParseFrameBase(b []byte) (*FrameBase, error) {
 	reader := bytes.NewReader(b)
 	var fb FrameBase
 	var tmp uint8
 	var err error
 	// Length(24)
+
+	endianness := GetEndianness()
 	for i := 0; i < LengthSize; i++ {
-		err = binary.Read(reader, binary.BigEndian, &tmp)
+		err = binary.Read(reader, endianness, &tmp)
 		if err != nil {
 			return nil, err
 		}
 		fb.Length = fb.Length*256 + uint32(tmp)
 	}
 	// Type(8)
-	err = binary.Read(reader, binary.BigEndian, &fb.Type)
+	err = binary.Read(reader, endianness, &fb.Type)
 	if err != nil {
 		return nil, err
 	}
 	// Flags(8)
-	err = binary.Read(reader, binary.BigEndian, &fb.Flags)
+	err = binary.Read(reader, endianness, &fb.Flags)
 	if err != nil {
 		return nil, err
 	}
 	// Stream Identifier(31)
-	err = binary.Read(reader, binary.BigEndian, &fb.StreamID)
+	err = binary.Read(reader, endianness, &fb.StreamID)
 	if err != nil {
 		return nil, err
 	}
